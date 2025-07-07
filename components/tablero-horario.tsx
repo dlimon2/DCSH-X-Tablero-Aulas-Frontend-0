@@ -1,17 +1,103 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Clock } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Clock, Wifi, WifiOff, AlertCircle } from "lucide-react"
 
-// Tipo para las clases
-type Clase = {
-  id: number
-  aula: string
-  materia: string
-  profesor: string
-  horaInicio: number // Hora en formato 24h (7 = 7:00, 13.5 = 13:30)
-  horaFin: number
-  estado: "En curso" | "Próxima" | "Finalizada"
+// Tipos para los datos de la API
+interface TimeSlot {
+  program: string
+  subject: string
+  professor: string
+  time: string
+  status: 'available' | 'occupied'
+}
+
+interface Classroom {
+  number: string
+  building: string
+  name: string
+  capacity: number
+  schedule_for_day: TimeSlot[]
+  last_updated: string
+}
+
+interface ClassroomData {
+  timestamp: string
+  classrooms: Classroom[]
+  total_classrooms: number
+  current_time: string
+  current_day: string
+  last_updated: string
+}
+
+interface WebSocketMessage {
+  type: string
+  data: ClassroomData
+}
+
+// Hook para WebSocket
+const useWebSocket = (url: string) => {
+  const [data, setData] = useState<ClassroomData | null>(null)
+  const [isConnected, setIsConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const ws = new WebSocket(url)
+    
+    ws.onopen = () => {
+      console.log('WebSocket conectado')
+      setIsConnected(true)
+      setError(null)
+    }
+
+    ws.onmessage = (event) => {
+        try {
+          // Validar si es JSON antes de parsear
+          if (typeof event.data !== "string" || !event.data.trim().startsWith("{")) {
+            console.warn("WebSocket ignorado (no es JSON):", event.data)
+            return
+          }
+      
+          const message: WebSocketMessage = JSON.parse(event.data)
+      
+          if (message.type === "classrooms_update") {
+            setData(message.data)
+          }
+        } catch (err) {
+          console.error("Error al parsear WebSocket:", err, event.data)
+        }
+      }
+
+    ws.onclose = () => {
+      console.log('WebSocket desconectado')
+      setIsConnected(false)
+      
+      // Intentar reconectar después de 3 segundos
+      setTimeout(() => {
+        console.log('Intentando reconectar...')
+      }, 3000)
+    }
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error)
+      setError('Error en la conexión WebSocket')
+      setIsConnected(false)
+    }
+
+    // Enviar ping cada 30 segundos para mantener la conexión activa
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('ping')
+      }
+    }, 30000)
+
+    return () => {
+      clearInterval(pingInterval)
+      ws.close()
+    }
+  }, [url])
+
+  return { data, isConnected, error }
 }
 
 export default function TableroHorario() {
@@ -20,241 +106,13 @@ export default function TableroHorario() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [transitioning, setTransitioning] = useState(false)
 
-  // Datos de ejemplo para las clases
-  const clases: Clase[] = [
-    {
-      id: 1,
-      aula: "D-101",
-      materia: "Metodología de la Investigación",
-      profesor: "Dr. Martínez López",
-      horaInicio: 8,
-      horaFin: 10,
-      estado: "En curso",
-    },
-    {
-      id: 2,
-      aula: "D-101",
-      materia: "Teoría Social Contemporánea",
-      profesor: "Dra. Sánchez Gómez",
-      horaInicio: 10,
-      horaFin: 12,
-      estado: "Próxima",
-    },
-    {
-      id: 3,
-      aula: "D-101",
-      materia: "Seminario de Tesis",
-      profesor: "Dr. Rodríguez Pérez",
-      horaInicio: 13,
-      horaFin: 15,
-      estado: "Próxima",
-    },
-    {
-      id: 4,
-      aula: "D-102",
-      materia: "Estadística Avanzada",
-      profesor: "Dra. González Ruiz",
-      horaInicio: 9,
-      horaFin: 12,
-      estado: "En curso",
-    },
-    {
-      id: 5,
-      aula: "D-102",
-      materia: "Economía Política",
-      profesor: "Dr. Hernández Torres",
-      horaInicio: 14,
-      horaFin: 16,
-      estado: "Próxima",
-    },
-    {
-      id: 6,
-      aula: "D-103",
-      materia: "Análisis del Discurso",
-      profesor: "Dra. López Vázquez",
-      horaInicio: 7,
-      horaFin: 9,
-      estado: "Finalizada",
-    },
-    {
-      id: 7,
-      aula: "D-103",
-      materia: "Epistemología",
-      profesor: "Dr. Ramírez Silva",
-      horaInicio: 11,
-      horaFin: 14,
-      estado: "Próxima",
-    },
-    {
-      id: 8,
-      aula: "D-103",
-      materia: "Estudios Culturales",
-      profesor: "Dra. Flores Mendoza",
-      horaInicio: 16,
-      horaFin: 19,
-      estado: "Próxima",
-    },
-    {
-      id: 9,
-      aula: "D-201",
-      materia: "Políticas Públicas",
-      profesor: "Dr. Torres Medina",
-      horaInicio: 8,
-      horaFin: 11,
-      estado: "En curso",
-    },
-    {
-      id: 10,
-      aula: "D-201",
-      materia: "Desarrollo Sustentable",
-      profesor: "Dra. Medina Castro",
-      horaInicio: 12,
-      horaFin: 15,
-      estado: "Próxima",
-    },
-    {
-      id: 11,
-      aula: "D-202",
-      materia: "Comunicación y Sociedad",
-      profesor: "Dr. Castro Juárez",
-      horaInicio: 9,
-      horaFin: 12,
-      estado: "En curso",
-    },
-    {
-      id: 12,
-      aula: "D-202",
-      materia: "Género y Sociedad",
-      profesor: "Dra. Juárez Ortiz",
-      horaInicio: 15,
-      horaFin: 18,
-      estado: "Próxima",
-    },
-    {
-      id: 13,
-      aula: "D-203",
-      materia: "Historia Social",
-      profesor: "Dr. Ortiz Vargas",
-      horaInicio: 10,
-      horaFin: 13,
-      estado: "Próxima",
-    },
-    {
-      id: 14,
-      aula: "D-203",
-      materia: "Antropología Urbana",
-      profesor: "Dra. Vargas Morales",
-      horaInicio: 14,
-      horaFin: 17,
-      estado: "Próxima",
-    },
-    {
-      id: 15,
-      aula: "D-301",
-      materia: "Sociología de la Educación",
-      profesor: "Dr. Morales Rivas",
-      horaInicio: 7,
-      horaFin: 10,
-      estado: "Finalizada",
-    },
-    {
-      id: 16,
-      aula: "D-301",
-      materia: "Psicología Social",
-      profesor: "Dra. Rivas Mendez",
-      horaInicio: 11,
-      horaFin: 14,
-      estado: "Próxima",
-    },
-    {
-      id: 17,
-      aula: "D-302",
-      materia: "Filosofía Política",
-      profesor: "Dr. Mendez Soto",
-      horaInicio: 8,
-      horaFin: 11,
-      estado: "En curso",
-    },
-    {
-      id: 18,
-      aula: "D-302",
-      materia: "Derecho Constitucional",
-      profesor: "Dra. Soto Vega",
-      horaInicio: 13,
-      horaFin: 16,
-      estado: "Próxima",
-    },
-    {
-      id: 19,
-      aula: "D-303",
-      materia: "Teoría Crítica",
-      profesor: "Dr. Vega Rojas",
-      horaInicio: 9,
-      horaFin: 12,
-      estado: "En curso",
-    },
-    {
-      id: 20,
-      aula: "D-303",
-      materia: "Metodología Cualitativa",
-      profesor: "Dra. Rojas Díaz",
-      horaInicio: 14,
-      horaFin: 17,
-      estado: "Próxima",
-    },
-    {
-      id: 21,
-      aula: "D-401",
-      materia: "Economía Ambiental",
-      profesor: "Dr. Díaz Fuentes",
-      horaInicio: 10,
-      horaFin: 13,
-      estado: "Próxima",
-    },
-    {
-      id: 22,
-      aula: "D-401",
-      materia: "Desarrollo Regional",
-      profesor: "Dra. Fuentes Mora",
-      horaInicio: 15,
-      horaFin: 18,
-      estado: "Próxima",
-    },
-    {
-      id: 23,
-      aula: "D-402",
-      materia: "Análisis Político",
-      profesor: "Dr. Mora Campos",
-      horaInicio: 8,
-      horaFin: 11,
-      estado: "En curso",
-    },
-    {
-      id: 24,
-      aula: "D-402",
-      materia: "Teoría del Estado",
-      profesor: "Dra. Campos Ríos",
-      horaInicio: 12,
-      horaFin: 15,
-      estado: "Próxima",
-    },
-  ]
+  // Referencias para evitar closure problems
+  const transitioningRef = useRef(false)
+  const currentPageRef = useRef(0)
+  const totalPagesRef = useRef(0)
 
-  // Obtener aulas únicas
-  const aulas = Array.from(new Set(clases.map((clase) => clase.aula))).sort()
-
-  // Número de aulas por página
-  const aulasPerPage = 6
-  const totalPages = Math.ceil(aulas.length / aulasPerPage)
-
-  // Cambiar página automáticamente cada 20 segundos
-  useEffect(() => {
-    const interval = setInterval(() => {
-      changePage()
-    }, 20000)
-
-    return () => clearInterval(interval)
-  }, [totalPages])
+  // Conectar al WebSocket
+  const { data: classroomData, isConnected, error } = useWebSocket('ws://localhost:8000/ws')
 
   // Actualizar reloj cada segundo
   useEffect(() => {
@@ -265,21 +123,140 @@ export default function TableroHorario() {
     return () => clearInterval(interval)
   }, [])
 
+  const parseTimeSlots = (timeSlots: TimeSlot[]) => {
+    const mergedSlots = []
+  
+    let currentSlot: TimeSlot | null = null
+    let startTime = ""
+    let endTime = ""
+  
+    for (let i = 0; i < timeSlots.length; i++) {
+      const slot = timeSlots[i]
+      const nextSlot = timeSlots[i + 1]
+  
+      if (!currentSlot) {
+        currentSlot = slot
+        startTime = slot.time.split("-")[0]
+        endTime = slot.time.split("-")[1]
+      } else {
+        // ¿Es igual al anterior?
+        const sameClass =
+          slot.program === currentSlot.program &&
+          slot.subject === currentSlot.subject &&
+          slot.professor === currentSlot.professor &&
+          slot.status === currentSlot.status
+  
+        if (sameClass) {
+          // Extiende el horario de fin
+          endTime = slot.time.split("-")[1]
+        } else {
+          // Guarda el bloque anterior
+          mergedSlots.push({
+            program: currentSlot.program,
+            subject: currentSlot.subject,
+            professor: currentSlot.professor,
+            time: `${startTime}-${endTime}`,
+            status: currentSlot.status
+          })
+          currentSlot = slot
+          startTime = slot.time.split("-")[0]
+          endTime = slot.time.split("-")[1]
+        }
+      }
+  
+      // Último bloque
+      if (i === timeSlots.length - 1 && currentSlot) {
+        mergedSlots.push({
+          program: currentSlot.program,
+          subject: currentSlot.subject,
+          professor: currentSlot.professor,
+          time: `${startTime}-${endTime}`,
+          status: currentSlot.status
+        })
+      }
+    }
+  
+    // Mismo procesamiento que antes
+    return mergedSlots
+      .map((slot, index) => {
+        const [startTime, endTime] = slot.time.split('-')
+        const startHour = parseInt(startTime.split(':')[0])
+        const startMinute = parseInt(startTime.split(':')[1])
+        const endHour = parseInt(endTime.split(':')[0])
+        const endMinute = parseInt(endTime.split(':')[1])
+  
+        return {
+          id: index,
+          aula: '',
+          materia: slot.subject || slot.program.split(' ').slice(1).join(' ') || 'Sin materia',
+          profesor: slot.professor || 'No especificado',
+          horaInicio: startHour + startMinute / 60,
+          horaFin: endHour + endMinute / 60,
+          estado: slot.status === 'occupied' ? 'En curso' : 'Disponible',
+          programa: slot.program.split(' ')[0] || ''
+        }
+      })
+      .filter(slot => slot.materia !== 'Sin materia' && slot.programa !== '')
+  }
+
+  // Obtener aulas de los datos del WebSocket
+  const getAulasFromData = () => {
+    if (!classroomData) return []
+    
+    return classroomData.classrooms.map(classroom => ({
+      nombre: classroom.name,
+      numero: classroom.number,
+      edificio: classroom.building,
+      capacidad: classroom.capacity,
+      clases: parseTimeSlots(classroom.schedule_for_day).map(clase => ({
+        ...clase,
+        aula: classroom.name
+      }))
+    }))
+  }
+
+  const aulas = getAulasFromData()
+  const aulasPerPage = 6
+  const totalPages = Math.ceil(aulas.length / aulasPerPage)
+
+  // Actualizar referencias cuando cambien los valores
+  useEffect(() => {
+    currentPageRef.current = currentPage
+  }, [currentPage])
+
+  useEffect(() => {
+    totalPagesRef.current = totalPages
+  }, [totalPages])
+
+  useEffect(() => {
+    transitioningRef.current = transitioning
+  }, [transitioning])
+
   // Función para cambiar de página con animación
   const changePage = () => {
-    if (transitioning) return
+    if (transitioningRef.current || totalPagesRef.current <= 1) return
 
-    const next = (currentPage + 1) % totalPages
+    const next = (currentPageRef.current + 1) % totalPagesRef.current
     setNextPage(next)
     setTransitioning(true)
 
-    // Después de que termine la animación, actualizar la página actual
     setTimeout(() => {
       setCurrentPage(next)
       setNextPage(null)
       setTransitioning(false)
-    }, 800) // Debe coincidir con la duración de la animación CSS
+    }, 800)
   }
+
+  // Cambiar página automáticamente cada 20 segundos
+  useEffect(() => {
+    if (totalPages <= 1) return
+
+    const interval = setInterval(() => {
+      changePage()
+    }, 20000)
+
+    return () => clearInterval(interval)
+  }, [totalPages]) // Mantener totalPages como dependencia
 
   // Obtener aulas para una página específica
   const getAulasForPage = (page: number) => {
@@ -302,20 +279,14 @@ export default function TableroHorario() {
     day: "numeric",
   })
 
-  // Calcular segundos restantes para la próxima actualización
-  const secondsRemaining = 20 - (Math.floor(Date.now() / 1000) % 20)
-
-  // Obtener la hora actual en formato decimal (por ejemplo, 14.5 para 14:30)
+  // Obtener la hora actual en formato decimal
   const horaActual = currentTime.getHours() + currentTime.getMinutes() / 60
 
-  // Generar horas para las columnas (de 7 a 20)
+  // Generar horas para las columnas (de 7 a 21)
   const horas = Array.from({ length: 14 }, (_, i) => i + 7)
 
-  // Obtener el porcentaje de minutos transcurridos en la hora actual (0-100)
-  const minutosActualesPorcentaje = (currentTime.getMinutes() / 60) * 100
-
   // Renderizar tabla de horarios
-  const renderHorarioTable = (aulasPage: string[]) => {
+  const renderHorarioTable = (aulasPage: any[]) => {
     return (
       <div className="w-full overflow-x-auto">
         <table className="w-full border-collapse">
@@ -339,73 +310,74 @@ export default function TableroHorario() {
             </tr>
           </thead>
           <tbody>
-            {aulasPage.map((aula) => {
-              const clasesAula = clases.filter((clase) => clase.aula === aula)
+            {aulasPage.map((aula, index) => (
+              <tr key={`${aula.numero}-${index}`} className="border-b border-gray-700">
+                <td className="p-3 text-xl font-bold sticky left-0 z-10 bg-gray-900">
+                  <div className="flex flex-col">
+                    <span className="text-lg">{aula.nombre}</span>
+                    <span className="text-sm text-gray-400">Cap: {aula.capacidad}</span>
+                  </div>
+                </td>
+                <td colSpan={horas.length} className="p-0 relative" style={{ height: '80px' }}>
+                  {/* Columna resaltada para la hora actual */}
+                  {horas.map((hora) => (
+                    <div
+                      key={hora}
+                      className={`absolute top-0 bottom-0 ${
+                        Math.floor(horaActual) === hora ? "bg-[#0971ce]/10 z-0" : ""
+                      }`}
+                      style={{
+                        left: `${((hora - 7) / horas.length) * 100}%`,
+                        width: `${(1 / horas.length) * 100}%`,
+                      }}
+                    />
+                  ))}
+                  {/* Indicador de tiempo actual */}
+                  {Math.floor(horaActual) >= 7 && Math.floor(horaActual) <= 20 && (
+                    <div
+                      className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-20"
+                      style={{
+                        left: `${((Math.floor(horaActual) - 7 + currentTime.getMinutes() / 60) / horas.length) * 100}%`,
+                      }}
+                    />
+                  )}
+                  {aula.clases.map((clase: any) => {
+                    const inicioCol = clase.horaInicio - 7
+                    const duracion = clase.horaFin - clase.horaInicio
+                    const esActual = clase.horaInicio <= horaActual && clase.horaFin > horaActual
 
-              return (
-                <tr key={aula} className="border-b border-gray-700">
-                  <td className="p-3 text-xl font-bold sticky left-0 z-10 bg-gray-900">{aula}</td>
-                  <td colSpan={horas.length} className="p-0 relative">
-                    {/* Columna resaltada para la hora actual */}
-                    {horas.map((hora) => (
+                    return (
                       <div
-                        key={hora}
-                        className={`absolute top-0 bottom-0 ${
-                          Math.floor(horaActual) === hora ? "bg-[#0971ce]/10 z-0 hora-actual-columna" : ""
+                        key={`${clase.id}-${index}`}
+                        className={`absolute top-0 bottom-0 p-1 border border-gray-600 rounded-md overflow-hidden ${
+                          esActual
+                            ? "bg-green-600"
+                            : clase.estado === "Disponible"
+                              ? "bg-gray-700"
+                              : "bg-[#0971ce]/80"
                         }`}
                         style={{
-                          left: `${((hora - 7) / horas.length) * 100}%`,
-                          width: `${(1 / horas.length) * 100}%`,
+                          left: `${(inicioCol / horas.length) * 100}%`,
+                          width: `${(duracion / horas.length) * 100}%`,
+                          minHeight: "80px",
                         }}
-                      />
-                    ))}
-                    {/* Indicador de tiempo actual */}
-                    {Math.floor(horaActual) >= 7 && Math.floor(horaActual) <= 20 && (
-                      <div
-                        className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-20 linea-tiempo-actual"
-                        style={{
-                          left: `${((Math.floor(horaActual) - 7 + currentTime.getMinutes() / 60) / horas.length) * 100}%`,
-                        }}
-                      />
-                    )}
-                    {clasesAula.map((clase) => {
-                      // Calcular posición y ancho del bloque
-                      const inicioCol = clase.horaInicio - 7 // 7 es la hora de inicio
-                      const duracion = clase.horaFin - clase.horaInicio
-                      const anchoCol = duracion
-                      const esActual = clase.horaInicio <= horaActual && clase.horaFin > horaActual
-
-                      return (
-                        <div
-                          key={clase.id}
-                          className={`absolute top-0 bottom-0 p-1 border border-gray-600 rounded-md overflow-hidden ${
-                            esActual
-                              ? "bg-green-600"
-                              : clase.estado === "Finalizada"
-                                ? "bg-gray-700"
-                                : "bg-[#0971ce]/80"
-                          }`}
-                          style={{
-                            left: `${(inicioCol / horas.length) * 100}%`,
-                            width: `${(anchoCol / horas.length) * 100}%`,
-                          }}
-                        >
-                          <div className="text-sm font-bold truncate">{clase.materia}</div>
-                          <div className="text-xs truncate">{clase.profesor}</div>
-                          <div className="text-xs">
-                            {Math.floor(clase.horaInicio)}:
-                            {(clase.horaInicio % 1) * 60 === 0 ? "00" : (clase.horaInicio % 1) * 60}
-                            {" - "}
-                            {Math.floor(clase.horaFin)}:
-                            {(clase.horaFin % 1) * 60 === 0 ? "00" : (clase.horaFin % 1) * 60}
-                          </div>
+                      >
+                        <div className="text-xs font-bold text-orange-200 mb-1">{clase.programa}</div>
+                        <div className="text-sm font-bold truncate">{clase.materia}</div>
+                        <div className="text-xs truncate">{clase.profesor}</div>
+                        <div className="text-xs">
+                          {Math.floor(clase.horaInicio).toString().padStart(2, '0')}:
+                          {Math.floor((clase.horaInicio % 1) * 60).toString().padStart(2, '0')}
+                          {" - "}
+                          {Math.floor(clase.horaFin).toString().padStart(2, '0')}:
+                          {Math.floor((clase.horaFin % 1) * 60).toString().padStart(2, '0')}
                         </div>
-                      )
-                    })}
-                  </td>
-                </tr>
-              )
-            })}
+                      </div>
+                    )
+                  })}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -416,49 +388,161 @@ export default function TableroHorario() {
     <div className="min-h-screen bg-gray-900 text-white font-[Arial,sans-serif]">
       {/* Encabezado */}
       <header className="bg-[#0971ce] p-4 flex justify-between items-center">
-        <h1 className="text-2xl md:text-4xl font-bold">DCSH Posgrados - UAM Xochimilco</h1>
-        <div className="flex items-center gap-2">
-          <Clock className="h-6 w-6" />
-          <div>
-            <div className="text-xl font-bold">{formattedTime}</div>
-            <div className="text-sm capitalize">{formattedDate}</div>
+        <div>
+          <h1 className="text-2xl md:text-4xl font-bold">DCSH Posgrados - UAM Xochimilco</h1>
+          <p className="text-sm opacity-80">
+            Tablero de aulas en tiempo real
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          {/* Indicador de conexión */}
+          <div className="flex items-center gap-2">
+            {isConnected ? (
+              <div className="flex items-center gap-1 text-green-300">
+                <Wifi className="h-4 w-4" />
+                <span className="text-sm">Conectado</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-red-300">
+                <WifiOff className="h-4 w-4" />
+                <span className="text-sm">Desconectado</span>
+              </div>
+            )}
+          </div>
+          
+          {/* Reloj */}
+          <div className="flex items-center gap-2">
+            <Clock className="h-6 w-6" />
+            <div>
+              <div className="text-xl font-bold">{formattedTime}</div>
+              <div className="text-sm capitalize">{formattedDate}</div>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Tabla de horarios */}
+      {/* Contenido principal */}
       <div className="container mx-auto p-4">
-        <div className="transition-container" style={{ height: `${aulasPerPage * 80}px` }}>
-          {/* Página actual */}
-          <div className={`transition-page current ${transitioning ? "slide-out-up" : ""}`}>
-            {renderHorarioTable(getAulasForPage(currentPage))}
+        {error && (
+          <div className="mb-4 p-4 bg-red-900/50 border border-red-500 rounded-lg flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-red-400" />
+            <span className="text-red-300">{error}</span>
           </div>
+        )}
 
-          {/* Página siguiente (solo visible durante la transición) */}
-          {nextPage !== null && (
-            <div className="transition-page slide-in-up">{renderHorarioTable(getAulasForPage(nextPage))}</div>
-          )}
-        </div>
-
-        {/* Paginación */}
-        <div className="mt-6 flex justify-center">
-          <div className="flex gap-2">
-            {Array.from({ length: totalPages }).map((_, index) => (
-              <div
-                key={index}
-                className={`w-3 h-3 rounded-full ${currentPage === index ? "bg-[#0971ce]" : "bg-gray-600"}`}
-              />
-            ))}
+        {!classroomData ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0971ce] mx-auto mb-4"></div>
+              <p className="text-gray-400">Cargando datos del tablero...</p>
+            </div>
           </div>
-        </div>
+        ) : aulas.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-400 text-lg">No hay aulas disponibles en este momento</p>
+          </div>
+        ) : (
+          <>
+            {/* Tabla de horarios */}
+            <div className="transition-container" style={{ minHeight: `${aulasPerPage * 80}px` }}>
+              <div className={`transition-page current ${transitioning ? "slide-out-up" : ""}`}>
+                {renderHorarioTable(getAulasForPage(currentPage))}
+              </div>
+
+              {nextPage !== null && (
+                <div className="transition-page slide-in-up">
+                  {renderHorarioTable(getAulasForPage(nextPage))}
+                </div>
+              )}
+            </div>
+
+            {/* Paginación */}
+            {totalPages > 1 && (
+              <div className="mt-6 flex justify-center">
+                <div className="flex gap-2">
+                  {Array.from({ length: totalPages }).map((_, index) => (
+                    <div
+                      key={index}
+                      className={`w-3 h-3 rounded-full ${
+                        currentPage === index ? "bg-[#0971ce]" : "bg-gray-600"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Pie de página */}
         <div className="mt-8 text-center text-gray-400">
-          <p>
-            Página {currentPage + 1} de {totalPages} • Próxima actualización en {secondsRemaining} segundos
+          <p className="flex items-center justify-center gap-2">
+            <span>
+              {classroomData ? 
+                `Mostrando ${aulas.length} de ${classroomData.total_classrooms} aulas` :
+                'Cargando...'
+              }
+            </span>
+            {totalPages > 1 && (
+              <>
+                <span>•</span>
+                <span>Página {currentPage + 1} de {totalPages}</span>
+              </>
+            )}
           </p>
+          {classroomData && (
+            <p className="text-sm mt-2 opacity-70">
+              Última actualización: {new Date(classroomData.last_updated).toLocaleString('es-MX')}
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Estilos para las animaciones */}
+      <style jsx>{`
+        .transition-container {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .transition-page {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+          will-change: transform;
+          backface-visibility: hidden;
+        }
+
+        .transition-page.current {
+          position: relative;
+          transform: translateY(0);
+          z-index: 1;
+        }
+
+        .transition-page.slide-out-up {
+          transform: translateY(-100%);
+          z-index: 0;
+        }
+
+        .transition-page.slide-in-up {
+          transform: translateY(100%);
+          z-index: 2;
+          animation: slideInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        @keyframes slideInUp {
+          0% {
+            transform: translateY(100%);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   )
 }

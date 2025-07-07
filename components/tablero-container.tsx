@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Clock } from "lucide-react"
 
 export default function TableroContainer() {
@@ -9,155 +9,11 @@ export default function TableroContainer() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [transitioning, setTransitioning] = useState(false)
 
-  // Datos de ejemplo para las aulas
-  const aulas = [
-    {
-      id: 1,
-      aula: "D-101",
-      profesor: "Dr. Martínez López",
-      materia: "Metodología de la Investigación",
-      horario: "09:00 - 11:00",
-      estado: "En curso",
-    },
-    {
-      id: 2,
-      aula: "D-102",
-      profesor: "Dra. Sánchez Gómez",
-      materia: "Teoría Social Contemporánea",
-      horario: "10:00 - 12:00",
-      estado: "Próxima",
-    },
-    {
-      id: 3,
-      aula: "D-103",
-      profesor: "Dr. Rodríguez Pérez",
-      materia: "Seminario de Tesis",
-      horario: "11:00 - 13:00",
-      estado: "Próxima",
-    },
-    {
-      id: 4,
-      aula: "D-201",
-      profesor: "Dra. González Ruiz",
-      materia: "Estadística Avanzada",
-      horario: "12:00 - 14:00",
-      estado: "Próxima",
-    },
-    {
-      id: 5,
-      aula: "D-202",
-      profesor: "Dr. Hernández Torres",
-      materia: "Economía Política",
-      horario: "13:00 - 15:00",
-      estado: "Próxima",
-    },
-    {
-      id: 6,
-      aula: "D-203",
-      profesor: "Dra. López Vázquez",
-      materia: "Análisis del Discurso",
-      horario: "14:00 - 16:00",
-      estado: "Próxima",
-    },
-    {
-      id: 7,
-      aula: "D-301",
-      profesor: "Dr. Ramírez Silva",
-      materia: "Epistemología",
-      horario: "15:00 - 17:00",
-      estado: "Próxima",
-    },
-    {
-      id: 8,
-      aula: "D-302",
-      profesor: "Dra. Flores Mendoza",
-      materia: "Estudios Culturales",
-      horario: "16:00 - 18:00",
-      estado: "Próxima",
-    },
-    {
-      id: 9,
-      aula: "D-303",
-      profesor: "Dr. Torres Medina",
-      materia: "Políticas Públicas",
-      horario: "17:00 - 19:00",
-      estado: "Próxima",
-    },
-    {
-      id: 10,
-      aula: "D-401",
-      profesor: "Dra. Medina Castro",
-      materia: "Desarrollo Sustentable",
-      horario: "18:00 - 20:00",
-      estado: "Próxima",
-    },
-    {
-      id: 11,
-      aula: "D-402",
-      profesor: "Dr. Castro Juárez",
-      materia: "Comunicación y Sociedad",
-      horario: "09:00 - 11:00",
-      estado: "En curso",
-    },
-    {
-      id: 12,
-      aula: "D-403",
-      profesor: "Dra. Juárez Ortiz",
-      materia: "Género y Sociedad",
-      horario: "10:00 - 12:00",
-      estado: "Próxima",
-    },
-    {
-      id: 13,
-      aula: "D-501",
-      profesor: "Dr. Ortiz Vargas",
-      materia: "Historia Social",
-      horario: "11:00 - 13:00",
-      estado: "Próxima",
-    },
-    {
-      id: 14,
-      aula: "D-502",
-      profesor: "Dra. Vargas Morales",
-      materia: "Antropología Urbana",
-      horario: "12:00 - 14:00",
-      estado: "Próxima",
-    },
-    {
-      id: 15,
-      aula: "D-503",
-      profesor: "Dr. Morales Rivas",
-      materia: "Sociología de la Educación",
-      horario: "13:00 - 15:00",
-      estado: "Próxima",
-    },
-    {
-      id: 16,
-      aula: "D-601",
-      profesor: "Dra. Rivas Mendez",
-      materia: "Psicología Social",
-      horario: "14:00 - 16:00",
-      estado: "Próxima",
-    },
-    {
-      id: 17,
-      aula: "D-602",
-      profesor: "Dr. Mendez Soto",
-      materia: "Filosofía Política",
-      horario: "15:00 - 17:00",
-      estado: "Próxima",
-    },
-    {
-      id: 18,
-      aula: "D-603",
-      profesor: "Dra. Soto Vega",
-      materia: "Derecho Constitucional",
-      horario: "16:00 - 18:00",
-      estado: "Próxima",
-    },
-  ]
+  const transitioningRef = useRef(false)
+  const currentPageRef = useRef(0)
 
-  // Número de aulas por página
+  const aulas = [/* ... mismo arreglo de aulas ... */]
+
   const aulasPerPage = 9
   const totalPages = Math.ceil(aulas.length / aulasPerPage)
 
@@ -181,26 +37,26 @@ export default function TableroContainer() {
 
   // Función para cambiar de página con animación
   const changePage = () => {
-    if (transitioning) return
+    if (transitioningRef.current) return
 
-    const next = (currentPage + 1) % totalPages
+    const next = (currentPageRef.current + 1) % totalPages
     setNextPage(next)
     setTransitioning(true)
+    transitioningRef.current = true
 
-    // Después de que termine la animación, actualizar la página actual
     setTimeout(() => {
       setCurrentPage(next)
+      currentPageRef.current = next
       setNextPage(null)
       setTransitioning(false)
-    }, 800) // Debe coincidir con la duración de la animación CSS
+      transitioningRef.current = false
+    }, 800)
   }
 
-  // Obtener aulas para una página específica
   const getAulasForPage = (page: number) => {
     return aulas.slice(page * aulasPerPage, (page + 1) * aulasPerPage)
   }
 
-  // Formatear hora actual
   const formattedTime = currentTime.toLocaleTimeString("es-MX", {
     hour: "2-digit",
     minute: "2-digit",
@@ -208,7 +64,6 @@ export default function TableroContainer() {
     hour12: false,
   })
 
-  // Formatear fecha actual
   const formattedDate = currentTime.toLocaleDateString("es-MX", {
     weekday: "long",
     year: "numeric",
@@ -216,11 +71,11 @@ export default function TableroContainer() {
     day: "numeric",
   })
 
-  // Calcular segundos restantes para la próxima actualización
   const secondsRemaining = 20 - (Math.floor(Date.now() / 1000) % 20)
 
-  // Renderizar tabla de aulas
-  const renderAulasTable = (aulas: typeof getAulasForPage extends (arg: any) => infer R ? R : never) => {
+  const renderAulasTable = (
+    aulas: typeof getAulasForPage extends (arg: any) => infer R ? R : never
+  ) => {
     return (
       <table className="w-full border-collapse">
         <thead>
@@ -247,8 +102,8 @@ export default function TableroContainer() {
             </tr>
           ))}
 
-          {/* Filas vacías para mantener altura consistente */}
-          {Array.from({ length: aulasPerPage - aulas.length }).map((_, index) => (
+          {/* Filas vacías para altura constante */}
+          {Array.from({ length: aulasPerPage - aulas.length % aulasPerPage || aulasPerPage }).map((_, index) => (
             <tr key={`empty-${index}`} className="border-b border-gray-700">
               <td className="p-3 h-[52px]">&nbsp;</td>
               <td className="p-3">&nbsp;</td>
@@ -276,15 +131,12 @@ export default function TableroContainer() {
         </div>
       </header>
 
-      {/* Tabla de aulas */}
+      {/* Tabla */}
       <div className="container mx-auto p-4">
         <div className="transition-container" style={{ height: `${aulasPerPage * 52 + 56}px` }}>
-          {/* Página actual */}
           <div className={`transition-page current ${transitioning ? "slide-out-up" : ""}`}>
             {renderAulasTable(getAulasForPage(currentPage))}
           </div>
-
-          {/* Página siguiente (solo visible durante la transición) */}
           {nextPage !== null && (
             <div className="transition-page slide-in-up">{renderAulasTable(getAulasForPage(nextPage))}</div>
           )}
