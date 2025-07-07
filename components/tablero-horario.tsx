@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { Clock, Wifi, WifiOff, AlertCircle } from "lucide-react"
 
 // Tipos para los datos de la API
@@ -102,14 +102,8 @@ const useWebSocket = (url: string) => {
 
 export default function TableroHorario() {
   const [currentPage, setCurrentPage] = useState(0)
-  const [nextPage, setNextPage] = useState<number | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [transitioning, setTransitioning] = useState(false)
-
-  // Referencias para evitar closure problems
-  const transitioningRef = useRef(false)
-  const currentPageRef = useRef(0)
-  const totalPagesRef = useRef(0)
+  const [isTransitioning, setIsTransitioning] = useState(false)
 
   // Conectar al WebSocket
   const { data: classroomData, isConnected, error } = useWebSocket('ws://localhost:8000/ws')
@@ -132,7 +126,6 @@ export default function TableroHorario() {
   
     for (let i = 0; i < timeSlots.length; i++) {
       const slot = timeSlots[i]
-      const nextSlot = timeSlots[i + 1]
   
       if (!currentSlot) {
         currentSlot = slot
@@ -216,47 +209,31 @@ export default function TableroHorario() {
   }
 
   const aulas = getAulasFromData()
-  const aulasPerPage = 6
+  const aulasPerPage = 7
   const totalPages = Math.ceil(aulas.length / aulasPerPage)
-
-  // Actualizar referencias cuando cambien los valores
-  useEffect(() => {
-    currentPageRef.current = currentPage
-  }, [currentPage])
-
-  useEffect(() => {
-    totalPagesRef.current = totalPages
-  }, [totalPages])
-
-  useEffect(() => {
-    transitioningRef.current = transitioning
-  }, [transitioning])
-
-  // Función para cambiar de página con animación
-  const changePage = () => {
-    if (transitioningRef.current || totalPagesRef.current <= 1) return
-
-    const next = (currentPageRef.current + 1) % totalPagesRef.current
-    setNextPage(next)
-    setTransitioning(true)
-
-    setTimeout(() => {
-      setCurrentPage(next)
-      setNextPage(null)
-      setTransitioning(false)
-    }, 800)
-  }
 
   // Cambiar página automáticamente cada 20 segundos
   useEffect(() => {
     if (totalPages <= 1) return
 
     const interval = setInterval(() => {
-      changePage()
+      if (!isTransitioning) {
+        setIsTransitioning(true)
+        
+        // Después de 400ms (mitad del fade), cambiar la página
+        setTimeout(() => {
+          setCurrentPage(prev => (prev + 1) % totalPages)
+        }, 400)
+        
+        // Después de 800ms (fade completo), terminar la transición
+        setTimeout(() => {
+          setIsTransitioning(false)
+        }, 800)
+      }
     }, 20000)
 
     return () => clearInterval(interval)
-  }, [totalPages]) // Mantener totalPages como dependencia
+  }, [totalPages, isTransitioning])
 
   // Obtener aulas para una página específica
   const getAulasForPage = (page: number) => {
@@ -443,17 +420,14 @@ export default function TableroHorario() {
           </div>
         ) : (
           <>
-            {/* Tabla de horarios */}
-            <div className="transition-container" style={{ minHeight: `${aulasPerPage * 80}px` }}>
-              <div className={`transition-page current ${transitioning ? "slide-out-up" : ""}`}>
-                {renderHorarioTable(getAulasForPage(currentPage))}
-              </div>
-
-              {nextPage !== null && (
-                <div className="transition-page slide-in-up">
-                  {renderHorarioTable(getAulasForPage(nextPage))}
-                </div>
-              )}
+            {/* Tabla de horarios con fade transition */}
+            <div 
+              className={`transition-all duration-700 ease-in-out ${
+                isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+              }`}
+              style={{ minHeight: `${aulasPerPage * 80}px` }}
+            >
+              {renderHorarioTable(getAulasForPage(currentPage))}
             </div>
 
             {/* Paginación */}
@@ -463,8 +437,8 @@ export default function TableroHorario() {
                   {Array.from({ length: totalPages }).map((_, index) => (
                     <div
                       key={index}
-                      className={`w-3 h-3 rounded-full ${
-                        currentPage === index ? "bg-[#0971ce]" : "bg-gray-600"
+                      className={`w-3 h-3 rounded-full transition-colors duration-300 ${
+                        currentPage === index ? "bg-blue-600" : "bg-gray-600"
                       }`}
                     />
                   ))}
@@ -497,52 +471,6 @@ export default function TableroHorario() {
           )}
         </div>
       </div>
-
-      {/* Estilos para las animaciones */}
-      <style jsx>{`
-        .transition-container {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .transition-page {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-          will-change: transform;
-          backface-visibility: hidden;
-        }
-
-        .transition-page.current {
-          position: relative;
-          transform: translateY(0);
-          z-index: 1;
-        }
-
-        .transition-page.slide-out-up {
-          transform: translateY(-100%);
-          z-index: 0;
-        }
-
-        .transition-page.slide-in-up {
-          transform: translateY(100%);
-          z-index: 2;
-          animation: slideInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }
-
-        @keyframes slideInUp {
-          0% {
-            transform: translateY(100%);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   )
 }
