@@ -106,7 +106,7 @@ export default function TableroHorario() {
   const [isTransitioning, setIsTransitioning] = useState(false)
 
   // Conectar al WebSocket
-  const { data: classroomData, isConnected, error } = useWebSocket('ws://localhost:8000/ws')
+  const { data: classroomData, isConnected, error } = useWebSocket(process.env.NEXT_PUBLIC_API_URL + "ws")
 
   // Actualizar reloj cada segundo
   useEffect(() => {
